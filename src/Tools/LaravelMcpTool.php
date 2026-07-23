@@ -14,13 +14,18 @@ use Prism\Prism\Tool;
 
 class LaravelMcpTool extends Tool
 {
-    public function __construct(private readonly \Laravel\Mcp\Server\Tool $tool)
-    {
+    /**
+     * @param  array<string, mixed>|null  $definition
+     */
+    public function __construct(
+        private readonly \Laravel\Mcp\Server\Tool $tool,
+        ?array $definition = null,
+    ) {
         $this->as($tool->name())
             ->for($tool->description())
             ->using($this);
 
-        $data = $tool->toArray();
+        $data = $definition ?? $tool->toArray();
         $properties = $data['inputSchema']['properties'] ?? [];
         $required = $data['inputSchema']['required'] ?? [];
 

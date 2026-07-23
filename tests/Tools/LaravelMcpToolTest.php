@@ -11,6 +11,42 @@ use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool as McpTool;
 use Prism\Prism\Tools\LaravelMcpTool;
 
+it('can reuse a precomputed MCP definition', function (): void {
+    $schemaCalls = 0;
+    $mcpTool = new class($schemaCalls) extends McpTool
+    {
+        protected string $name = 'precomputed-tool';
+
+        protected string $description = 'A tool with an expensive schema';
+
+        public function __construct(private int &$schemaCalls) {}
+
+        public function schema(JsonSchema $schema): array
+        {
+            $this->schemaCalls++;
+
+            return [
+                'expensive' => $schema->string(),
+            ];
+        }
+    };
+
+    $tool = new LaravelMcpTool($mcpTool, [
+        'inputSchema' => [
+            'properties' => [
+                'cached' => ['type' => 'string'],
+            ],
+            'required' => ['cached'],
+        ],
+    ]);
+
+    expect($schemaCalls)->toBe(0)
+        ->and($tool->parametersAsArray())->toBe([
+            'cached' => ['type' => 'string'],
+        ])
+        ->and($tool->requiredParameters())->toBe(['cached']);
+});
+
 it('can handle a tool that returns a Response', function (): void {
     $mcpTool = new class extends McpTool
     {

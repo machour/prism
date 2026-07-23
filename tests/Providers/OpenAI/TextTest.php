@@ -17,6 +17,7 @@ use Prism\Prism\ValueObjects\Media\Document;
 use Prism\Prism\ValueObjects\Media\Image;
 use Prism\Prism\ValueObjects\MessagePartWithCitations;
 use Prism\Prism\ValueObjects\Messages\AssistantMessage;
+use Prism\Prism\ValueObjects\Messages\SystemMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 use Prism\Prism\ValueObjects\ProviderTool;
@@ -73,11 +74,21 @@ it('maps cache writes and sends prompt cache options', function (): void {
         ]),
     ]);
 
+    $cacheablePrompt = (new SystemMessage('Stable instructions.'))
+        ->withProviderOptions([
+            'prompt_cache_breakpoint' => [
+                'mode' => 'explicit',
+            ],
+        ]);
     $response = Prism::text()
         ->using('openai', 'gpt-5.6')
         ->withProviderOptions([
             'prompt_cache_key' => 'cache-key',
-            'prompt_cache_options' => ['mode' => 'implicit'],
+            'prompt_cache_options' => ['mode' => 'explicit'],
+        ])
+        ->withSystemPrompts([
+            $cacheablePrompt,
+            new SystemMessage('Dynamic context.'),
         ])
         ->withPrompt('Hello')
         ->asText();
@@ -86,8 +97,26 @@ it('maps cache writes and sends prompt cache options', function (): void {
         ->and($response->usage->cacheReadInputTokens)->toBe(20)
         ->and($response->usage->cacheWriteInputTokens)->toBe(30);
 
-    Http::assertSent(fn (Request $request): bool => $request->data()['prompt_cache_key'] === 'cache-key'
-        && $request->data()['prompt_cache_options']['mode'] === 'implicit');
+    Http::assertSent(function (Request $request): bool {
+        expect($request->data()['prompt_cache_key'])->toBe('cache-key')
+            ->and($request->data()['prompt_cache_options']['mode'])->toBe('explicit')
+            ->and($request->data()['input'][0])->toBe([
+                'role' => 'system',
+                'content' => [[
+                    'type' => 'input_text',
+                    'text' => 'Stable instructions.',
+                    'prompt_cache_breakpoint' => [
+                        'mode' => 'explicit',
+                    ],
+                ]],
+            ])
+            ->and($request->data()['input'][1])->toBe([
+                'role' => 'system',
+                'content' => 'Dynamic context.',
+            ]);
+
+        return true;
+    });
 });
 
 it('can generate text with a system prompt', function (): void {

@@ -59,6 +59,21 @@ class MessageMap
 
     protected function mapSystemMessage(SystemMessage $message): void
     {
+        $promptCacheBreakpoint = $message->providerOptions('prompt_cache_breakpoint');
+
+        if (is_array($promptCacheBreakpoint)) {
+            $this->mappedMessages[] = [
+                'role' => 'system',
+                'content' => [[
+                    'type' => 'input_text',
+                    'text' => $message->content,
+                    'prompt_cache_breakpoint' => $promptCacheBreakpoint,
+                ]],
+            ];
+
+            return;
+        }
+
         $this->mappedMessages[] = [
             'role' => 'system',
             'content' => $message->content,

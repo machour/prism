@@ -267,6 +267,45 @@ it('maps system prompt', function (): void {
     ]);
 });
 
+it('maps explicit prompt cache breakpoints on system prompt content', function (): void {
+    $cacheablePrompt = (new SystemMessage('A stable reusable system prompt.'))
+        ->withProviderOptions([
+            'prompt_cache_breakpoint' => [
+                'mode' => 'explicit',
+            ],
+        ]);
+    $messageMap = new MessageMap(
+        messages: [new UserMessage('Who are you?')],
+        systemPrompts: [
+            $cacheablePrompt,
+            new SystemMessage('Dynamic context for Aly.'),
+        ],
+    );
+
+    expect($messageMap())->toBe([
+        [
+            'role' => 'system',
+            'content' => [[
+                'type' => 'input_text',
+                'text' => 'A stable reusable system prompt.',
+                'prompt_cache_breakpoint' => [
+                    'mode' => 'explicit',
+                ],
+            ]],
+        ],
+        [
+            'role' => 'system',
+            'content' => 'Dynamic context for Aly.',
+        ],
+        [
+            'role' => 'user',
+            'content' => [
+                ['type' => 'input_text', 'text' => 'Who are you?'],
+            ],
+        ],
+    ]);
+});
+
 describe('documents', function (): void {
     it('maps user messages with pdf documents', function (): void {
         $messageMap = new MessageMap(

@@ -86,7 +86,7 @@ class Text
             array_filter(data_get($data, 'output', []), fn (array $output): bool => $output['type'] === 'reasoning'),
         );
 
-        $toolResults = $this->callTools($request->tools(), $toolCalls);
+        $toolResults = $this->callTools($request->callableTools(), $toolCalls);
 
         $this->addStep($data, $request, $clientResponse, $toolResults);
 
@@ -149,6 +149,8 @@ class Text
                 'truncation' => $request->providerOptions('truncation'),
                 'reasoning' => $request->providerOptions('reasoning'),
                 'store' => $request->providerOptions('store'),
+                'prompt_cache_key' => $request->providerOptions('prompt_cache_key'),
+                'prompt_cache_options' => $request->providerOptions('prompt_cache_options'),
             ]))
         );
 
@@ -175,8 +177,9 @@ class Text
             toolResults: $toolResults,
             providerToolCalls: ProviderToolCallMap::map($output),
             usage: new Usage(
-                promptTokens: data_get($data, 'usage.input_tokens', 0) - data_get($data, 'usage.input_tokens_details.cached_tokens', 0),
+                promptTokens: data_get($data, 'usage.input_tokens', 0),
                 completionTokens: data_get($data, 'usage.output_tokens'),
+                cacheWriteInputTokens: data_get($data, 'usage.input_tokens_details.cache_write_tokens'),
                 cacheReadInputTokens: data_get($data, 'usage.input_tokens_details.cached_tokens'),
                 thoughtTokens: data_get($data, 'usage.output_tokens_details.reasoning_tokens'),
             ),

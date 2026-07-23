@@ -49,6 +49,47 @@ it('returns structured output', function (): void {
     expect($response->structured['coat_required'])->toBeBool();
 });
 
+it('maps cache writes for structured responses', function (): void {
+    Http::fake([
+        '*/responses' => Http::response([
+            'id' => 'resp_structured_cache',
+            'model' => 'gpt-5.6',
+            'output' => [[
+                'type' => 'message',
+                'status' => 'completed',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => '{"value":"cached"}',
+                ]],
+            ]],
+            'usage' => [
+                'input_tokens' => 80,
+                'output_tokens' => 4,
+                'input_tokens_details' => [
+                    'cached_tokens' => 10,
+                    'cache_write_tokens' => 15,
+                ],
+            ],
+        ]),
+    ]);
+    $schema = new ObjectSchema(
+        'output',
+        'Output',
+        [new StringSchema('value', 'Value')],
+        ['value'],
+    );
+
+    $response = Prism::structured()
+        ->using('openai', 'gpt-5.6')
+        ->withSchema($schema)
+        ->withPrompt('Return a value')
+        ->asStructured();
+
+    expect($response->usage->promptTokens)->toBe(80)
+        ->and($response->usage->cacheReadInputTokens)->toBe(10)
+        ->and($response->usage->cacheWriteInputTokens)->toBe(15);
+});
+
 it('returns structured output using json mode', function (): void {
     FixtureResponse::fakeResponseSequence('v1/responses', 'openai/structured-json-mode');
 
@@ -245,7 +286,7 @@ it('sets usage correctly with automatic caching', function (): void {
         ->asStructured();
 
     expect($two->usage)
-        ->promptTokens->toEqual(1531 - 1408)
+        ->promptTokens->toEqual(1531)
         ->completionTokens->toEqual(583)
         ->cacheWriteInputTokens->toEqual(null)
         ->cacheReadInputTokens->toEqual(1408);

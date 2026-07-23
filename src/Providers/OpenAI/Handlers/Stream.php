@@ -149,11 +149,17 @@ class Stream
                 $item = data_get($data, 'item', []);
                 $itemType = data_get($item, 'type', '');
 
-                if ($itemType !== 'function_call' && str_ends_with((string) $itemType, '_call')) {
+                if (
+                    $itemType !== 'function_call'
+                    && (
+                        str_ends_with((string) $itemType, '_call')
+                        || $itemType === 'tool_search_output'
+                    )
+                ) {
                     yield new ProviderToolEvent(
                         id: EventID::generate(),
                         timestamp: time(),
-                        toolType: $itemType,
+                        toolType: $itemType === 'tool_search_output' ? 'tool_search' : $itemType,
                         status: 'completed',
                         itemId: data_get($item, 'id', ''),
                         data: $item
@@ -259,6 +265,7 @@ class Stream
                 $this->state->addUsage(new Usage(
                     promptTokens: data_get($data, 'response.usage.input_tokens'),
                     completionTokens: data_get($data, 'response.usage.output_tokens'),
+                    cacheWriteInputTokens: data_get($data, 'response.usage.input_tokens_details.cache_write_tokens'),
                     cacheReadInputTokens: data_get($data, 'response.usage.input_tokens_details.cached_tokens'),
                     thoughtTokens: data_get($data, 'response.usage.output_tokens_details.reasoning_tokens')
                 ));
@@ -396,7 +403,7 @@ class Stream
     {
         $mappedToolCalls = $this->mapToolCalls($this->state->toolCalls());
         $toolResults = [];
-        yield from $this->callToolsAndYieldEvents($request->tools(), $mappedToolCalls, $this->state->messageId(), $toolResults);
+        yield from $this->callToolsAndYieldEvents($request->callableTools(), $mappedToolCalls, $this->state->messageId(), $toolResults);
 
         // Emit step finish after tool calls
         $this->state->markStepFinished();
@@ -589,6 +596,8 @@ class Stream
                     ] : null,
                     'truncation' => $request->providerOptions('truncation'),
                     'reasoning' => $request->providerOptions('reasoning'),
+                    'prompt_cache_key' => $request->providerOptions('prompt_cache_key'),
+                    'prompt_cache_options' => $request->providerOptions('prompt_cache_options'),
                 ]))
             );
 

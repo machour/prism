@@ -24,6 +24,7 @@ use Prism\Prism\Streaming\Events\ToolCallDeltaEvent;
 use Prism\Prism\Streaming\Events\ToolCallEvent;
 use Prism\Prism\Streaming\Events\ToolResultEvent;
 use Prism\Prism\ValueObjects\ProviderTool;
+use Prism\Prism\ValueObjects\ToolNamespace;
 use Prism\Prism\ValueObjects\Usage;
 use Tests\Fixtures\FixtureResponse;
 
@@ -134,6 +135,131 @@ it('can generate text using tools with streaming', function (): void {
         return $request->url() === 'https://api.openai.com/v1/responses'
             && isset($body['tools'])
             && $body['stream'] === true;
+    });
+});
+
+it('streams hosted tool search and executes a deferred namespace function', function (): void {
+    $firstResponse = implode("\n\n", [
+        'data: '.json_encode([
+            'type' => 'response.created',
+            'response' => ['model' => 'gpt-5.6'],
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.output_item.done',
+            'item' => [
+                'id' => 'ts_1',
+                'type' => 'tool_search_call',
+                'status' => 'completed',
+            ],
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.output_item.done',
+            'item' => [
+                'id' => 'tso_1',
+                'type' => 'tool_search_output',
+                'status' => 'completed',
+                'tools' => [],
+            ],
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.output_item.added',
+            'output_index' => 0,
+            'item' => [
+                'id' => 'fc_1',
+                'call_id' => 'call_1',
+                'type' => 'function_call',
+                'name' => 'search_orders',
+            ],
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.function_call_arguments.done',
+            'item_id' => 'fc_1',
+            'arguments' => '{"customer_id":"CUST-1"}',
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.completed',
+            'response' => [
+                'id' => 'resp_1',
+                'status' => 'completed',
+                'output' => [['type' => 'function_call']],
+                'usage' => [
+                    'input_tokens' => 20,
+                    'output_tokens' => 5,
+                    'input_tokens_details' => [
+                        'cached_tokens' => 2,
+                        'cache_write_tokens' => 3,
+                    ],
+                ],
+            ],
+        ]),
+    ])."\n\n";
+    $secondResponse = implode("\n\n", [
+        'data: '.json_encode([
+            'type' => 'response.created',
+            'response' => ['model' => 'gpt-5.6'],
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.output_text.delta',
+            'delta' => 'Done',
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.output_text.done',
+        ]),
+        'data: '.json_encode([
+            'type' => 'response.completed',
+            'response' => [
+                'id' => 'resp_2',
+                'status' => 'completed',
+                'output' => [['type' => 'message']],
+                'usage' => [
+                    'input_tokens' => 10,
+                    'output_tokens' => 2,
+                    'input_tokens_details' => [
+                        'cached_tokens' => 1,
+                        'cache_write_tokens' => 4,
+                    ],
+                ],
+            ],
+        ]),
+    ])."\n\n";
+
+    Http::fake([
+        '*/responses' => Http::sequence([
+            Http::response($firstResponse, 200),
+            Http::response($secondResponse, 200),
+        ]),
+    ]);
+
+    $tool = Tool::as('search_orders')
+        ->for('Search customer orders')
+        ->withStringParameter('customer_id', 'The customer identifier')
+        ->using(fn (string $customerId): string => "Orders for {$customerId}");
+    $stream = Prism::text()
+        ->using('openai', 'gpt-5.6')
+        ->withToolNamespaces([
+            new ToolNamespace('crm', 'Customer relationship tools.', [$tool]),
+        ])
+        ->withProviderTools([new ProviderTool('tool_search')])
+        ->withMaxSteps(2)
+        ->withPrompt('Find orders')
+        ->asStream();
+    $events = collect();
+
+    foreach ($stream as $event) {
+        $events->push($event);
+    }
+
+    expect($events->whereInstanceOf(ProviderToolEvent::class))->toHaveCount(2)
+        ->and($events->whereInstanceOf(ToolResultEvent::class))->toHaveCount(1)
+        ->and($events->last())->toBeInstanceOf(StreamEndEvent::class)
+        ->and($events->last()->usage->cacheWriteInputTokens)->toBe(7);
+
+    Http::assertSent(function (Request $request): bool {
+        $tools = $request->data()['tools'];
+
+        return $tools[0]['type'] === 'tool_search'
+            && $tools[1]['type'] === 'namespace'
+            && $tools[1]['tools'][0]['defer_loading'] === true;
     });
 });
 

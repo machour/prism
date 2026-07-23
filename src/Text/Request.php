@@ -13,6 +13,7 @@ use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Tool;
 use Prism\Prism\ValueObjects\Messages\SystemMessage;
 use Prism\Prism\ValueObjects\ProviderTool;
+use Prism\Prism\ValueObjects\ToolNamespace;
 
 class Request implements PrismRequest
 {
@@ -26,6 +27,7 @@ class Request implements PrismRequest
      * @param  array{0: array<int, int>|int, 1?: Closure|int, 2?: ?callable, 3?: bool}  $clientRetry
      * @param  array<string, mixed>  $providerOptions
      * @param  array<int, ProviderTool>  $providerTools
+     * @param  array<int, ToolNamespace>  $toolNamespaces
      */
     public function __construct(
         protected string $model,
@@ -43,6 +45,7 @@ class Request implements PrismRequest
         protected string|ToolChoice|null $toolChoice,
         array $providerOptions = [],
         protected array $providerTools = [],
+        protected array $toolNamespaces = [],
     ) {
         $this->providerOptions = $providerOptions;
     }
@@ -74,6 +77,28 @@ class Request implements PrismRequest
     public function tools(): array
     {
         return $this->tools;
+    }
+
+    /**
+     * @return array<int, ToolNamespace>
+     */
+    public function toolNamespaces(): array
+    {
+        return $this->toolNamespaces;
+    }
+
+    /**
+     * @return array<int, Tool>
+     */
+    public function callableTools(): array
+    {
+        $namespaceTools = [];
+
+        foreach ($this->toolNamespaces as $namespace) {
+            $namespaceTools = [...$namespaceTools, ...$namespace->tools];
+        }
+
+        return [...$this->tools, ...$namespaceTools];
     }
 
     public function topP(): int|float|null

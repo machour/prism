@@ -13,6 +13,7 @@ use Prism\Prism\Concerns\ManagesStructuredSteps;
 use Prism\Prism\Enums\FinishReason;
 use Prism\Prism\Enums\StructuredMode;
 use Prism\Prism\Exceptions\PrismException;
+use Prism\Prism\Providers\OpenAI\Concerns\BuildsTools;
 use Prism\Prism\Providers\OpenAI\Concerns\ExtractsCitations;
 use Prism\Prism\Providers\OpenAI\Concerns\MapsFinishReason;
 use Prism\Prism\Providers\OpenAI\Concerns\ProcessRateLimits;
@@ -20,7 +21,6 @@ use Prism\Prism\Providers\OpenAI\Concerns\ValidatesResponse;
 use Prism\Prism\Providers\OpenAI\Maps\MessageMap;
 use Prism\Prism\Providers\OpenAI\Maps\ToolCallMap;
 use Prism\Prism\Providers\OpenAI\Maps\ToolChoiceMap;
-use Prism\Prism\Providers\OpenAI\Maps\ToolMap;
 use Prism\Prism\Providers\OpenAI\Support\StructuredModeResolver;
 use Prism\Prism\Structured\Request;
 use Prism\Prism\Structured\Response as StructuredResponse;
@@ -30,12 +30,12 @@ use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\SystemMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
 use Prism\Prism\ValueObjects\Meta;
-use Prism\Prism\ValueObjects\ProviderTool;
 use Prism\Prism\ValueObjects\ToolResult;
 use Prism\Prism\ValueObjects\Usage;
 
 class Structured
 {
+    use BuildsTools;
     use CallsTools;
     use ExtractsCitations;
     use HandlesStructuredJson;
@@ -101,7 +101,7 @@ class Structured
     protected function handleToolCalls(array $data, Request $request, ClientResponse $clientResponse): StructuredResponse
     {
         $toolResults = $this->callTools(
-            $request->tools(),
+            $request->callableTools(),
             ToolCallMap::map($this->extractFunctionCalls($data)),
         );
 
@@ -147,8 +147,9 @@ class Structured
             text: data_get($data, 'output.{last}.content.0.text') ?? '',
             finishReason: $finishReason,
             usage: new Usage(
-                promptTokens: data_get($data, 'usage.input_tokens', 0) - data_get($data, 'usage.input_tokens_details.cached_tokens', 0),
+                promptTokens: data_get($data, 'usage.input_tokens', 0),
                 completionTokens: data_get($data, 'usage.output_tokens'),
+                cacheWriteInputTokens: data_get($data, 'usage.input_tokens_details.cache_write_tokens'),
                 cacheReadInputTokens: data_get($data, 'usage.input_tokens_details.cached_tokens'),
                 thoughtTokens: data_get($data, 'usage.output_tokens_details.reasoning_tokens'),
             ),
@@ -218,6 +219,8 @@ class Structured
                 'truncation' => $request->providerOptions('truncation'),
                 'reasoning' => $request->providerOptions('reasoning'),
                 'store' => $request->providerOptions('store'),
+                'prompt_cache_key' => $request->providerOptions('prompt_cache_key'),
+                'prompt_cache_options' => $request->providerOptions('prompt_cache_options'),
                 'text' => [
                     'format' => $responseFormat,
                 ],
@@ -284,27 +287,5 @@ class Structured
             "Respond with JSON that matches the following schema: \n %s",
             json_encode($request->schema()->toArray(), JSON_PRETTY_PRINT)
         )));
-    }
-
-    /**
-     * @return array<int|string,mixed>
-     */
-    protected function buildTools(Request $request): array
-    {
-        $tools = ToolMap::map($request->tools());
-
-        if ($request->providerTools() === []) {
-            return $tools;
-        }
-
-        $providerTools = array_map(
-            fn (ProviderTool $tool): array => [
-                'type' => $tool->type,
-                ...$tool->options,
-            ],
-            $request->providerTools()
-        );
-
-        return array_merge($providerTools, $tools);
     }
 }

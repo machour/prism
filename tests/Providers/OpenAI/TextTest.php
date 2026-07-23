@@ -49,6 +49,47 @@ it('can generate text with a prompt', function (): void {
     expect($response->text)->toBeString();
 });
 
+it('maps cache writes and sends prompt cache options', function (): void {
+    Http::fake([
+        '*/responses' => Http::response([
+            'id' => 'resp_cache',
+            'model' => 'gpt-5.6',
+            'output' => [[
+                'type' => 'message',
+                'status' => 'completed',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => 'Cached',
+                ]],
+            ]],
+            'usage' => [
+                'input_tokens' => 100,
+                'output_tokens' => 5,
+                'input_tokens_details' => [
+                    'cached_tokens' => 20,
+                    'cache_write_tokens' => 30,
+                ],
+            ],
+        ]),
+    ]);
+
+    $response = Prism::text()
+        ->using('openai', 'gpt-5.6')
+        ->withProviderOptions([
+            'prompt_cache_key' => 'cache-key',
+            'prompt_cache_options' => ['mode' => 'implicit'],
+        ])
+        ->withPrompt('Hello')
+        ->asText();
+
+    expect($response->usage->promptTokens)->toBe(100)
+        ->and($response->usage->cacheReadInputTokens)->toBe(20)
+        ->and($response->usage->cacheWriteInputTokens)->toBe(30);
+
+    Http::assertSent(fn (Request $request): bool => $request->data()['prompt_cache_key'] === 'cache-key'
+        && $request->data()['prompt_cache_options']['mode'] === 'implicit');
+});
+
 it('can generate text with a system prompt', function (): void {
     FixtureResponse::fakeResponseSequence(
         'v1/responses',
@@ -350,7 +391,7 @@ it('sets usage correctly with automatic caching', function (): void {
         ->asText();
 
     expect($two->usage)
-        ->promptTokens->toEqual(1111 - 1024)
+        ->promptTokens->toEqual(1111)
         ->completionTokens->toEqual(109)
         ->cacheWriteInputTokens->toEqual(null)
         ->cacheReadInputTokens->toEqual(1024);

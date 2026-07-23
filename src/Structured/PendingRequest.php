@@ -16,6 +16,7 @@ use Prism\Prism\Concerns\HasPrompts;
 use Prism\Prism\Concerns\HasProviderOptions;
 use Prism\Prism\Concerns\HasProviderTools;
 use Prism\Prism\Concerns\HasSchema;
+use Prism\Prism\Concerns\HasToolNamespaces;
 use Prism\Prism\Concerns\HasTools;
 use Prism\Prism\Contracts\Schema;
 use Prism\Prism\Exceptions\PrismException;
@@ -34,6 +35,7 @@ class PendingRequest
     use HasProviderOptions;
     use HasProviderTools;
     use HasSchema;
+    use HasToolNamespaces;
     use HasTools;
 
     /**
@@ -89,6 +91,7 @@ class PendingRequest
             maxSteps: $this->maxSteps,
             providerOptions: $this->providerOptions,
             providerTools: $this->providerTools,
+            toolNamespaces: $this->toolNamespaces,
         );
     }
 }

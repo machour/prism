@@ -23,8 +23,12 @@ class Embeddings
 
     public function handle(Request $request): EmbeddingsResponse
     {
-        if (count($request->inputs()) > 1) {
+        if (count($request->contents()) > 1) {
             throw new PrismException('Vertex Error: Prism currently only supports one input at a time with Vertex AI.');
+        }
+
+        if (count($request->inputs()) !== 1) {
+            throw new PrismException('Vertex Error: Text embeddings require exactly one text input; media and multipart inputs are not supported.');
         }
 
         $response = $this->sendRequest($request);
@@ -40,7 +44,7 @@ class Embeddings
         return new EmbeddingsResponse(
             embeddings: [Embedding::fromArray(data_get($data, 'predictions.0.embeddings.values', []))],
             usage: new EmbeddingsUsage(
-                data_get($data, 'metadata.billableCharacterCount', 0)
+                data_get($data, 'predictions.0.embeddings.statistics.token_count')
             ),
             meta: new Meta(
                 id: '',

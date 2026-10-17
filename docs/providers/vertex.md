@@ -1,6 +1,8 @@
 # Vertex AI
 
-Google Vertex AI provides enterprise-grade access to Google's Gemini models with enhanced security, compliance, and integration with Google Cloud services.
+Google Vertex AI provides access to Google's Gemini models through Google Cloud projects and locations. The provider shares Gemini's text, structured, and streaming implementation while keeping Vertex URLs, authentication, and text embedding requests.
+
+See the [0.102.0 upgrade report](./vertex-upgrade-0.102.md) before updating an existing application, especially its token accounting and pricing.
 
 ## Configuration
 
@@ -31,7 +33,7 @@ You can obtain an access token using the Google Cloud CLI:
 gcloud auth print-access-token
 ```
 
-#### 2. Service Account Credentials (Recommended for production)
+#### 2. Service Account Credentials
 
 Provide the path to your service account JSON key file:
 
@@ -41,7 +43,7 @@ VERTEX_CREDENTIALS_PATH=/path/to/service-account.json
 
 #### 3. Application Default Credentials
 
-If no credentials are provided, Prism will attempt to use Application Default Credentials (ADC). Set up ADC by running:
+If no token or explicit file is provided, Prism looks for a credentials file in `GOOGLE_APPLICATION_CREDENTIALS`, then the local gcloud ADC path. Service-account keys and authorized-user JSON files are supported. Set up a local authorized-user file by running:
 
 ```bash
 gcloud auth application-default login
@@ -53,6 +55,8 @@ Or by setting the `GOOGLE_APPLICATION_CREDENTIALS` environment variable:
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
+Precedence is explicit token, configured credentials file, environment credentials file, then local gcloud ADC file. An invalid selected file fails without falling back to another identity. Metadata-server identities, impersonation, and Workload Identity Federation are not implemented. Explicit access tokens must be renewed by the caller.
+
 ## Basic Usage
 
 ### Text Generation
@@ -62,7 +66,7 @@ use Prism\Prism\Facades\Prism;
 use Prism\Prism\Enums\Provider;
 
 $response = Prism::text()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withPrompt('Explain quantum computing in simple terms.')
     ->asText();
 
@@ -73,7 +77,7 @@ echo $response->text;
 
 ```php
 $response = Prism::text()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withSystemPrompt('You are a helpful coding assistant.')
     ->withPrompt('Write a Python function to calculate fibonacci numbers.')
     ->asText();
@@ -102,7 +106,7 @@ $schema = new ObjectSchema(
 );
 
 $response = Prism::structured()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withSchema($schema)
     ->withPrompt('Generate a profile for a fictional user named John Doe.')
     ->generate();
@@ -133,7 +137,7 @@ $weatherTool = (new Tool)
     });
 
 $response = Prism::text()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withTools([$weatherTool])
     ->withMaxSteps(3)
     ->withPrompt('What is the weather like in San Francisco?')
@@ -168,7 +172,7 @@ use Prism\Prism\Facades\Prism;
 use Prism\Prism\Enums\Provider;
 
 $stream = Prism::text()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withPrompt('Write a short story about a robot.')
     ->asStream();
 
@@ -190,7 +194,7 @@ use Prism\Prism\ValueObjects\Messages\UserMessage;
 use Prism\Prism\ValueObjects\Media\Image;
 
 $response = Prism::text()
-    ->using(Provider::Vertex, 'gemini-1.5-flash')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withMessages([
         new UserMessage(
             'What do you see in this image?',
@@ -210,7 +214,7 @@ For models that support it (like Gemini 2.5), you can configure thinking mode:
 
 ```php
 $response = Prism::text()
-    ->using(Provider::Vertex, 'gemini-2.5-flash-preview')
+    ->using(Provider::Vertex, 'gemini-2.5-flash')
     ->withPrompt('Solve this complex math problem...')
     ->withProviderOptions([
         'thinkingBudget' => 2048,
@@ -221,17 +225,9 @@ $response = Prism::text()
 echo $response->usage->thoughtTokens;
 ```
 
-## Available Models
+## Model Selection
 
-Vertex AI provides access to Google's Gemini model family:
-
-| Model | Description |
-|-------|-------------|
-| `gemini-1.5-flash` | Fast and efficient for most tasks |
-| `gemini-1.5-pro` | Most capable model for complex tasks |
-| `gemini-2.0-flash` | Latest generation with improved capabilities |
-| `gemini-2.5-flash-preview` | Preview of next generation with thinking support |
-| `text-embedding-004` | Text embeddings model |
+Use a model enabled for your Google Cloud project and location. Model availability and supported tool combinations vary; consult the [Google model documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models). Structured output uses `response_json_schema`, which must be supported by the selected model.
 
 ## Regions
 

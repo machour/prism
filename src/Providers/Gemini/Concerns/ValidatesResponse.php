@@ -15,12 +15,18 @@ trait ValidatesResponse
 
         if (! $data || data_get($data, 'error')) {
             throw PrismException::providerResponseError(vsprintf(
-                'Gemini Error: [%s] %s',
+                '%s Error: [%s] %s',
                 [
+                    $this->responseProviderName(),
                     data_get($data, 'error.code', 'unknown'),
                     data_get($data, 'error.message', 'unknown'),
                 ]
             ));
         }
+    }
+
+    protected function responseProviderName(): string
+    {
+        return 'Gemini';
     }
 }

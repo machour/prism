@@ -8,7 +8,6 @@ use Illuminate\Http\Client\Response as HttpResponse;
 use Prism\Prism\Enums\ToolChoice;
 use Prism\Prism\Exceptions\PrismException;
 use Prism\Prism\Providers\Anthropic\Maps\ToolChoiceMap;
-use Prism\Prism\Providers\Anthropic\Maps\ToolMap;
 use Prism\Prism\Structured\Response as PrismResponse;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 
@@ -48,16 +47,18 @@ class ToolStructuredStrategy extends AnthropicStructuredStrategy
             ],
         ];
 
-        $customTools = ToolMap::map($this->request->tools());
+        $existingTools = $payload['tools'] ?? [];
 
         $payload = [
             ...$payload,
-            'tools' => [...$customTools, $structuredOutputTool],
+            'tools' => [...$existingTools, $structuredOutputTool],
         ];
 
         $toolChoice = $this->resolveToolChoice();
         if ($toolChoice !== null) {
             $payload['tool_choice'] = $toolChoice;
+        } else {
+            unset($payload['tool_choice']);
         }
 
         return $payload;
@@ -93,26 +94,33 @@ class ToolStructuredStrategy extends AnthropicStructuredStrategy
      */
     protected function resolveToolChoice(): string|array|null
     {
-        // Thinking mode doesn't support tool_choice (Anthropic restriction)
-        if ($this->request->providerOptions('thinking.enabled') === true) {
+        if ($this->thinkingIsActive()) {
             return null;
         }
 
         $userToolChoice = $this->request->toolChoice();
-        $hasCustomTools = $this->request->tools() !== [];
 
-        // No custom tools: force the structured output tool
-        if (! $hasCustomTools) {
-            return ['type' => 'tool', 'name' => self::STRUCTURED_OUTPUT_TOOL_NAME];
-        }
-
-        // Custom tools present with explicit user choice: map the user's choice
         if ($userToolChoice !== null) {
             return ToolChoiceMap::map($userToolChoice);
         }
 
-        // Custom tools present with no explicit choice: use auto
+        if ($this->request->tools() === []) {
+            return ['type' => 'tool', 'name' => self::STRUCTURED_OUTPUT_TOOL_NAME];
+        }
+
         return ['type' => 'auto'];
+    }
+
+    /**
+     * Manual and adaptive thinking reject a forced `tool_choice`.
+     */
+    protected function thinkingIsActive(): bool
+    {
+        if ($this->request->providerOptions('thinking.enabled') === true) {
+            return true;
+        }
+
+        return in_array($this->request->providerOptions('thinking.type'), ['adaptive', 'enabled'], true);
     }
 
     protected function checkStrategySupport(): void

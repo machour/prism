@@ -29,7 +29,7 @@ describe('Embeddings for Vertex', function (): void {
         expect($response->embeddings)->toHaveCount(1)
             ->and($response->embeddings[0]->embedding)->toBeArray()
             ->and($response->embeddings[0]->embedding)->toHaveCount(10)
-            ->and($response->usage->tokens)->toBe(20)
+            ->and($response->usage->tokens)->toBe(6)
             ->and($response->meta->model)->toBe('text-embedding-004');
     });
 

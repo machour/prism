@@ -13,6 +13,7 @@ use Prism\Prism\Embeddings\Response as EmbeddingResponse;
 use Prism\Prism\Exceptions\PrismException;
 use Prism\Prism\Exceptions\PrismProviderOverloadedException;
 use Prism\Prism\Exceptions\PrismRateLimitedException;
+use Prism\Prism\Providers\Gemini\Concerns\ProcessesRateLimits;
 use Prism\Prism\Providers\Provider;
 use Prism\Prism\Providers\Vertex\Handlers\Embeddings;
 use Prism\Prism\Providers\Vertex\Handlers\Stream;
@@ -26,6 +27,7 @@ use Prism\Prism\Text\Response as TextResponse;
 class Vertex extends Provider
 {
     use InitializesClient;
+    use ProcessesRateLimits;
 
     public function __construct(
         public readonly string $projectId,
@@ -80,8 +82,13 @@ class Vertex extends Provider
 
     public function handleRequestException(string $model, RequestException $e): never
     {
+        $responseData = $e->response->json() ?? [];
+
         match ($e->response->getStatusCode()) {
-            429 => throw PrismRateLimitedException::make([]),
+            429 => throw PrismRateLimitedException::make(
+                rateLimits: $this->processRateLimits($responseData),
+                retryAfter: $this->extractRetryAfterSeconds($responseData)
+            ),
             503 => throw PrismProviderOverloadedException::make(class_basename($this)),
             default => $this->handleResponseErrors($e),
         };
@@ -139,22 +146,31 @@ class Vertex extends Provider
         }
 
         if ($this->credentialsPath !== null && $this->credentialsPath !== '') {
-            return $this->getAccessTokenFromServiceAccount();
+            return $this->getAccessTokenFromCredentialsFile($this->credentialsPath);
         }
 
         return $this->getAccessTokenFromApplicationDefaultCredentials();
     }
 
-    protected function getAccessTokenFromServiceAccount(): string
+    protected function getAccessTokenFromCredentialsFile(string $path): string
     {
-        if (! file_exists($this->credentialsPath)) {
-            throw new PrismException("Vertex AI credentials file not found: {$this->credentialsPath}");
+        if (! is_file($path) || ! is_readable($path)) {
+            throw new PrismException("Vertex AI credentials file not found or unreadable: {$path}");
         }
 
-        $credentials = json_decode(file_get_contents($this->credentialsPath), true);
+        $contents = file_get_contents($path);
+        $credentials = $contents === false ? null : json_decode($contents, true);
 
-        if (! isset($credentials['client_email'], $credentials['private_key'])) {
-            throw new PrismException('Invalid Vertex AI service account credentials file');
+        if (! is_array($credentials)) {
+            throw new PrismException('Invalid Vertex AI credentials file');
+        }
+
+        if (($credentials['type'] ?? null) === 'authorized_user') {
+            return $this->refreshAccessToken($credentials);
+        }
+
+        if (! is_string($credentials['client_email'] ?? null) || ! is_string($credentials['private_key'] ?? null)) {
+            throw new PrismException('Invalid or unsupported Vertex AI credentials file');
         }
 
         return $this->generateJwtToken($credentials);
@@ -179,8 +195,8 @@ class Vertex extends Provider
             'exp' => $now + 3600,
         ];
 
-        $headerEncoded = $this->base64UrlEncode(json_encode($header));
-        $payloadEncoded = $this->base64UrlEncode(json_encode($payload));
+        $headerEncoded = $this->base64UrlEncode(json_encode($header, JSON_THROW_ON_ERROR));
+        $payloadEncoded = $this->base64UrlEncode(json_encode($payload, JSON_THROW_ON_ERROR));
 
         $signatureInput = $headerEncoded.'.'.$payloadEncoded;
 
@@ -206,19 +222,13 @@ class Vertex extends Provider
     {
         $adcPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
 
-        if ($adcPath !== false && $adcPath !== '' && file_exists($adcPath)) {
-            $this->credentialsPath !== null ?: $adcPath;
-
-            return $this->getAccessTokenFromServiceAccount();
+        if ($adcPath !== false && $adcPath !== '') {
+            return $this->getAccessTokenFromCredentialsFile($adcPath);
         }
 
         $defaultPath = $this->getDefaultAdcPath();
         if (file_exists($defaultPath)) {
-            $credentials = json_decode(file_get_contents($defaultPath), true);
-
-            if (isset($credentials['type']) && $credentials['type'] === 'authorized_user') {
-                return $this->refreshAccessToken($credentials);
-            }
+            return $this->getAccessTokenFromCredentialsFile($defaultPath);
         }
 
         throw new PrismException(
@@ -241,7 +251,14 @@ class Vertex extends Provider
      */
     protected function refreshAccessToken(array $credentials): string
     {
+        foreach (['client_id', 'client_secret', 'refresh_token'] as $key) {
+            if (! is_string($credentials[$key] ?? null) || $credentials[$key] === '') {
+                throw new PrismException('Invalid Vertex AI authorized-user credentials');
+            }
+        }
+
         $response = $this->baseClient()
+            ->throwIf(fn (): bool => false)
             ->asForm()
             ->post('https://oauth2.googleapis.com/token', [
                 'client_id' => $credentials['client_id'],
@@ -250,10 +267,12 @@ class Vertex extends Provider
                 'grant_type' => 'refresh_token',
             ]);
 
-        if (! $response->successful()) {
-            throw new PrismException('Failed to refresh Vertex AI access token: '.$response->body());
+        $accessToken = $response->json('access_token');
+
+        if (! $response->successful() || ! is_string($accessToken) || $accessToken === '') {
+            throw new PrismException('Failed to refresh Vertex AI access token (HTTP '.$response->status().')');
         }
 
-        return $response->json('access_token');
+        return $accessToken;
     }
 }

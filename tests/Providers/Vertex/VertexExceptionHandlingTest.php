@@ -17,6 +17,31 @@ beforeEach(function (): void {
 });
 
 describe('Exception handling for Vertex', function (): void {
+    it('preserves Google quota details and retry delays', function (): void {
+        Http::fake(['*' => Http::response(['error' => [
+            'code' => 429, 'status' => 'RESOURCE_EXHAUSTED', 'message' => 'Quota exceeded',
+            'details' => [
+                ['@type' => 'type.googleapis.com/google.rpc.QuotaFailure', 'violations' => [
+                    ['quotaId' => 'GenerateContentTokensPerMinute', 'quotaValue' => '16000'],
+                ]],
+                ['@type' => 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay' => '35s'],
+            ],
+        ]], 429)])->preventStrayRequests();
+
+        try {
+            Prism::text()->using(Provider::Vertex, 'gemini-2.5-flash')->withPrompt('Hi')->asText();
+            test()->fail('Expected rate limit');
+        } catch (PrismRateLimitedException $exception) {
+            expect($exception->retryAfter)->toBe(35)
+                ->and($exception->rateLimits)->toHaveCount(1)
+                ->and($exception->rateLimits[0]->name)->toBe('GenerateContentTokensPerMinute')
+                ->and($exception->rateLimits[0]->limit)->toBe(16000)
+                ->and($exception->rateLimits[0]->remaining)->toBeNull()
+                ->and($exception->rateLimits[0]->resetsAt)->not->toBeNull();
+        }
+        Http::assertSentCount(1);
+    });
+
     it('throws PrismRateLimitedException on 429 response', function (): void {
         Http::fake([
             '*' => Http::response([

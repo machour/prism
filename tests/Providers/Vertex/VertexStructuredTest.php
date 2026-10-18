@@ -74,7 +74,7 @@ describe('Structured output for Vertex', function (): void {
             $data = $request->data();
 
             expect($data['generationConfig'])->toHaveKey('response_mime_type', 'application/json')
-                ->and($data['generationConfig'])->toHaveKey('response_schema');
+                ->and($data['generationConfig'])->toHaveKey('response_json_schema');
 
             return true;
         });

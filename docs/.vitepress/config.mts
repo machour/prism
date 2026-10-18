@@ -196,6 +196,10 @@ export default defineConfig({
                 link: "/providers/gemini",
               },
               {
+                text: "Vertex AI",
+                link: "/providers/vertex",
+              },
+              {
                 text: "Mistral",
                 link: "/providers/mistral",
               },

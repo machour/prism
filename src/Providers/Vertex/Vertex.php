@@ -29,6 +29,9 @@ class Vertex extends Provider
     use InitializesClient;
     use ProcessesRateLimits;
 
+    /**
+     * @param  array<string, mixed>|null  $credentialsData
+     */
     public function __construct(
         public readonly string $projectId,
         public readonly string $region,
@@ -173,6 +176,9 @@ class Vertex extends Provider
         return $this->getAccessTokenFromCredentials($credentials);
     }
 
+    /**
+     * @param  array<string, mixed>  $credentials
+     */
     protected function getAccessTokenFromCredentials(#[\SensitiveParameter] array $credentials): string
     {
         if (($credentials['type'] ?? null) === 'authorized_user') {

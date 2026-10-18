@@ -228,7 +228,7 @@ class PrismManager
     }
 
     /**
-     * @param  array<string, string>  $config
+     * @param  array<string, mixed>  $config
      */
     protected function createVertexProvider(array $config): Vertex
     {

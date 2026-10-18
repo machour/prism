@@ -34,6 +34,7 @@ class Vertex extends Provider
         public readonly string $region,
         #[\SensitiveParameter] public readonly ?string $accessToken = null,
         public readonly ?string $credentialsPath = null,
+        #[\SensitiveParameter] public readonly ?array $credentialsData = null,
     ) {}
 
     #[\Override]
@@ -145,6 +146,10 @@ class Vertex extends Provider
             return $this->accessToken;
         }
 
+        if ($this->credentialsData !== null) {
+            return $this->getAccessTokenFromCredentials($this->credentialsData);
+        }
+
         if ($this->credentialsPath !== null && $this->credentialsPath !== '') {
             return $this->getAccessTokenFromCredentialsFile($this->credentialsPath);
         }
@@ -165,6 +170,11 @@ class Vertex extends Provider
             throw new PrismException('Invalid Vertex AI credentials file');
         }
 
+        return $this->getAccessTokenFromCredentials($credentials);
+    }
+
+    protected function getAccessTokenFromCredentials(#[\SensitiveParameter] array $credentials): string
+    {
         if (($credentials['type'] ?? null) === 'authorized_user') {
             return $this->refreshAccessToken($credentials);
         }

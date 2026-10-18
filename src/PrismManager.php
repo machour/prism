@@ -237,6 +237,7 @@ class PrismManager
             region: $config['region'] ?? 'us-central1',
             accessToken: $config['access_token'] ?? null,
             credentialsPath: $config['credentials_path'] ?? null,
+            credentialsData: $config['credentials_data'] ?? null,
         );
     }
 

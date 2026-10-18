@@ -128,3 +128,18 @@ it('does not expose OAuth response bodies or accept missing access tokens', func
     }
     Http::assertSentCount(1);
 })->with(['failed refresh' => [400, ['error' => 'sensitive-provider-body']], 'missing token' => [200, []], 'empty token' => [200, ['access_token' => '']]]);
+
+it('authenticates from in-memory authorized-user credentials without a file', function (): void {
+    config()->set('prism.providers.vertex.credentials_data', [
+        'type' => 'authorized_user', 'client_id' => 'db-client', 'client_secret' => 'db-secret', 'refresh_token' => 'db-refresh',
+    ]);
+    config()->set('prism.providers.vertex.credentials_path', '/must-not-be-read.json');
+    Http::fake([
+        'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'database-token']),
+        '*aiplatform.googleapis.com/*' => Http::response(json_decode(file_get_contents('tests/Fixtures/vertex/generate-text-with-a-prompt-1.json'), true)),
+    ]);
+    Prism::text()->using(Provider::Vertex, 'gemini-2.5-flash')->withPrompt('Hi')->asText();
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://oauth2.googleapis.com/token' && $request['refresh_token'] === 'db-refresh');
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'aiplatform.googleapis.com') && $request->header('Authorization') === ['Bearer database-token']);
+    Http::assertSentCount(2);
+});
